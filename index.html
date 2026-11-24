@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Absensi Perangkat Desa Kedungmakam - Kab. Tuban</title>
+
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        emerald: {
+                            50: '#ecfdf5',
+                            100: '#d1fae5',
+                            500: '#10b981',
+                            600: '#059669',
+                            700: '#047857',
+                            800: '#065f46',
+                            900: '#064e3b',
+                        },
+                        tuban: {
+                            green: '#047857',
+                            gold: '#d97706',
+                            blue: '#1e40af'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Vue 3 CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+    <style>
+        /* CSS khusus cetak/print laporan pemerintah desa */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+                font-size: 11pt;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .print-only {
+                display: block !important;
+            }
+            .page-break {
+                page-break-before: always;
+            }
+            .kop-border {
+                border-bottom: 4px double #000;
+            }
+            @page {
+                size: A4 portrait;
+                margin: 1.5cm;
+            }
+        }
+        .print-only {
+            display: none;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <div id="app" class="flex-1 flex flex-col min-h-screen">
+
+        <!-- NAVIGASI KEPALA / HEADER (NO PRINT) -->
+        <header class="no-print bg-emerald-800 text-white shadow-md sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between h-16">
+                    
+                    <!-- Branding Header -->
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 bg-white rounded-full p-1 flex items-center justify-center shadow-sm overflow-hidden flex-shrink-0">
+                            <img :src="settings.logoUrl" alt="Logo Kab. Tuban" class="max-h-full max-w-full object-contain">
+                        </div>
+                        <div>
+                            <h1 class="font-bold text-base sm:text-lg leading-tight tracking-wide">PEMDES KEDUNGMAKAM</h1>
+                            <p class="text-xs text-emerald-200 hidden sm:block">Kec. Jatirogo, Kab. Tuban - Jawa Timur</p>
+                        </div>
+                    </div>
+
+                    <!-- Role Switcher & Status Perangkat -->
+                    <div class="flex items-center space-x-2 sm:space-x-4">
+                        <div class="bg-emerald-900/60 text-emerald-100 px-3 py-1 rounded-full text-xs flex items-center gap-1.5 border border-emerald-700/50">
+                            <i class="fa-solid fa-mobile-screen text-emerald-300"></i>
+                            <span class="hidden md:inline font-mono">ID HP: {{ deviceId.substring(0,8) }}...</span>
+                            <span class="bg-emerald-500 text-emerald-950 font-bold px-1.5 py-0.5 rounded text-[10px]">1 HP/Hari</span>
+                        </div>
+
+                        <!-- Button Toggle Mode (Pegawai / Admin) -->
+                        <div class="bg-emerald-900 p-1 rounded-lg flex text-xs font-medium">
+                            <button @click="currentRole = 'pegawai'"
+                                    :class="currentRole === 'pegawai' ? 'bg-white text-emerald-800 shadow font-bold' : 'text-emerald-100 hover:text-white'"
+                                    class="px-3 py-1.5 rounded-md transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-user-check"></i>
+                                <span>Absen Pegawai</span>
+                            </button>
+                            <button @click="currentRole = 'admin'"
+                                    :class="currentRole === 'admin' ? 'bg-white text-emerald-800 shadow font-bold' : 'text-emerald-100 hover:text-white'"
+                                    class="px-3 py-1.5 rounded-md transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-user-shield"></i>
+                                <span>Admin Desa</span>
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </header>
+
+        <!-- KONTEN UTAMA MEMAKAI CONTAINER -->
+        <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 no-print">
+
+            <!-- ========================================== -->
+            <!-- V I E W 1 : M O D E   P E G A W A I        -->
+            <!-- ========================================== -->
+            <section v-if="currentRole === 'pegawai'" class="max-w-xl mx-auto space-y-6">
+
+                <!-- Header Informasi Desa -->
+                <div class="bg-gradient-to-r from-emerald-800 to-emerald-600 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
+                    <div class="absolute right-0 top-0 translate-x-4 -translate-y-4 opacity-10 pointer-events-none">
+                        <i class="fa-solid fa-building-columns text-9xl"></i>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div class="w-16 h-16 bg-white/95 rounded-xl p-2 flex items-center justify-center shadow-lg flex-shrink-0">
+                            <img :src="settings.logoUrl" alt="Logo Kab Tuban" class="max-h-full max-w-full object-contain">
+                        </div>
+                        <div>
+                            <span class="bg-emerald-900/80 text-emerald-200 text-xs font-semibold px-2.5 py-0.5 rounded-full inline-block mb-1">
+                                Presensi Masuk Perangkat Desa
+                            </span>
+                            <h2 class="text-xl font-bold tracking-tight">PEMERINTAH DESA KEDUNGMAKAM</h2>
+                            <p class="text-xs text-emerald-100">Kecamatan Jatirogo, Kabupaten Tuban</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-4 border-t border-emerald-500/30 flex justify-between items-center text-xs text-emerald-100">
+                        <div class="flex items-center gap-1.5">
+                            <i class="fa-regular fa-clock"></i>
+                            <span class="font-semibold">{{ currentTimeString }} WIB</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <i class="fa-regular fa-calendar"></i>
+                            <span>{{ currentDateFormatted }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Select Pegawai / Form Presensi -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-5">
+                    
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-2">Pilih Identitas Pegawai / Perangkat Desa</label>
+                        <select v-model="selectedPegawaiNik" @change="onPegawaiSelected" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-slate-800 font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none transition">
+                            <option value="" disabled>-- Pilih NIK / Nama Perangkat Desa --</option>
+                            <option v-for="p in pegawaiList" :key="p.nik" :value="p.nik">
+                                {{ p.nama }} ({{ p.jabatan }})
+                            </option>
+                        </select>
+                    </div>
+
+                    <!-- Informasi Detail Pegawai Terpilih -->
+                    <div v-if="selectedPegawai" class="bg-slate-50 rounded-xl p-4 border border-slate-200 text-sm space-y-1">
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">NIK:</span>
+                            <span class="font-mono font-semibold text-slate-800">{{ selectedPegawai.nik }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">Jabatan:</span>
+                            <span class="font-medium text-emerald-800">{{ selectedPegawai.jabatan }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">Seksi / Unit:</span>
+                            <span class="text-slate-700">{{ selectedPegawai.seksi }}</span>
+                        </div>
+                    </div>
+
+                    <!-- STATUS VERIFIKASI PERANGKAT HP (1 HP PER HARI) -->
+                    <div class="p-4 rounded-xl text-sm border flex items-start gap-3"
+                         :class="deviceLockToday ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'">
+                        <i :class="deviceLockToday ? 'fa-solid fa-lock-keyhole text-amber-600 text-xl' : 'fa-solid fa-mobile-retro text-emerald-600 text-xl'" class="mt-0.5"></i>
+                        <div class="flex-1">
+                            <h4 class="font-bold mb-0.5 text-xs uppercase tracking-wider">
+                                Statis Perangkat HP (Daily Lock)
+                            </h4>
+                            <div v-if="deviceLockToday">
+                                Perangkat HP ini telah digunakan untuk melakukan Absen Masuk atas nama:
+                                <strong class="underline block mt-0.5">{{ deviceLockToday.nama }} ({{ deviceLockToday.jam }})</strong>
+                                <span class="text-xs text-amber-700 block mt-1">Sesuai kebijakan Pemdes Kedungmakam, 1 HP hanya berlaku untuk 1 kali presensi per hari.</span>
+                            </div>
+                            <div v-else>
+                                Perangkat HP ini <strong class="text-emerald-700">belum digunakan</strong> untuk absen hari ini ({{ todayDateString }}).
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STATUS VERIFIKASI GPS & GEOFENCING -->
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-sm font-semibold text-slate-700">Status Posisi GPS & Radius Kantor</h3>
+                            <button @click="updateGpsLocation" class="text-xs text-emerald-700 font-medium hover:underline flex items-center gap-1">
+                                <i class="fa-solid fa-rotate-right"></i> Refresh GPS
+                            </button>
+                        </div>
+
+                        <!-- GPS Card Info -->
+                        <div class="bg-slate-50 border rounded-xl p-4 text-xs space-y-2"
+                             :class="isWithinGeofence ? 'border-emerald-300' : 'border-rose-300'">
+                            <div class="flex justify-between items-center">
+                                <span class="text-slate-500">Jarak Ke Kantor Desa:</span>
+                                <span class="font-bold text-sm" :class="isWithinGeofence ? 'text-emerald-700' : 'text-rose-700'">
+                                    {{ currentDistance !== null ? currentDistance + ' meter' : 'Memuat lokasi...' }}
+                                </span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-slate-500">Toleransi Maksimal:</span>
+                                <span class="font-semibold text-slate-700">{{ settings.geofenceRadius }} meter</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-slate-500">Akurasi GPS:</span>
+                                <span class="text-slate-600">± {{ gpsAccuracy ? Math.round(gpsAccuracy) + 'm' : '-' }}</span>
+                            </div>
+
+                            <!-- Badge Status Radius -->
+                            <div class="pt-2 border-t flex items-center justify-between">
+                                <span class="text-slate-500 font-medium">Status Geofence:</span>
+                                <span v-if="gpsLoading" class="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-full text-[11px] font-semibold">
+                                    <i class="fa-solid fa-spinner fa-spin mr-1"></i> Memeriksa Lokasi...
+                                </span>
+                                <span v-else-if="isWithinGeofence" class="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1">
+                                    <i class="fa-solid fa-circle-check text-emerald-600"></i> Dalam Radius Kantor
+                                </span>
+                                <span v-else class="bg-rose-100 text-rose-800 border border-rose-300 px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1">
+                                    <i class="fa-solid fa-triangle-exclamation text-rose-600"></i> Di Luar Radius Kantor
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- TOGGLE SIMULASI GPS (UNTUK TESTING DEMO) -->
+                        <div class="bg-slate-100 p-2.5 rounded-lg text-xs text-slate-600 flex items-center justify-between">
+                            <span class="font-medium"><i class="fa-solid fa-flask text-emerald-600 mr-1"></i> Simulasi GPS (Demo Testing):</span>
+                            <div class="flex gap-1">
+                                <button @click="setSimulatedGps(true)" class="px-2 py-1 bg-white border border-slate-300 rounded text-[11px] hover:bg-emerald-50 hover:text-emerald-700 font-medium">Tepat di Kantor</button>
+                                <button @click="setSimulatedGps(false)" class="px-2 py-1 bg-white border border-slate-300 rounded text-[11px] hover:bg-rose-50 hover:text-rose-700 font-medium">Luar Radius (500m)</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CATATAN / CATATAN KHUSUS (OPTIONAL) -->
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Catatan Singkat (Opsional)</label>
+                        <input v-model="absenNote" type="text" placeholder="Misal: Tugas lapangan / Rapat di Kecamatan" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                    </div>
+
+                    <!-- TOMBOL ABSEN MASUK -->
+                    <div class="pt-2">
+                        <button @click="doAbsenMasuk" 
+                                :disabled="!canAbsen"
+                                class="w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all flex items-center justify-center gap-2 text-base"
+                                :class="canAbsen ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-700/20 active:scale-[0.99]' : 'bg-slate-300 text-slate-500 cursor-not-allowed'">
+                            <i class="fa-solid fa-fingerprint text-xl"></i>
+                            <span>SUBMIT ABSEN MASUK HARI INI</span>
+                        </button>
+
+                        <p v-if="alreadyAbsenToday" class="text-center text-xs text-emerald-700 font-medium mt-2">
+                            <i class="fa-solid fa-circle-check"></i> Anda sudah berhasil Absen Masuk hari ini.
+                        </p>
+                        <p v-else-if="deviceLockToday" class="text-center text-xs text-amber-700 font-medium mt-2">
+                            <i class="fa-solid fa-lock"></i> HP ini sudah dipakai pegawai lain hari ini.
+                        </p>
+                        <p v-else-if="!isWithinGeofence" class="text-center text-xs text-rose-600 font-medium mt-2">
+                            <i class="fa-solid fa-location-crosshairs"></i> Dekati area Kantor Desa Kedungmakam untuk absen.
+                        </p>
+                    </div>
+
+                </div>
+
+                <!-- BUKTI ABSEN HARI INI (IF ALREADY ABSEN) -->
+                <div v-if="todayPegawaiRecord" class="bg-emerald-900 text-white rounded-2xl p-6 shadow-xl space-y-4">
+                    <div class="flex justify-between items-center border-b border-emerald-700/60 pb-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-circle-check text-emerald-400 text-xl"></i>
+                            <h3 class="font-bold text-sm tracking-wide">BUKTI PRESENSI MASUK</h3>
+                        </div>
+                        <span class="bg-emerald-500 text-emerald-950 font-bold px-2.5 py-0.5 rounded text-xs">
+                            {{ todayPegawaiRecord.status }}
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                            <span class="text-emerald-300 block">Nama Pegawai</span>
+                            <span class="font-bold text-sm">{{ todayPegawaiRecord.nama }}</span>
+                        </div>
+                        <div>
+                            <span class="text-emerald-300 block">Waktu Absen</span>
+                            <span class="font-mono font-bold text-sm text-emerald-200">{{ todayPegawaiRecord.jam }} WIB</span>
+                        </div>
+                        <div>
+                            <span class="text-emerald-300 block">Tanggal</span>
+                            <span>{{ todayPegawaiRecord.tanggal }}</span>
+                        </div>
+                        <div>
+                            <span class="text-emerald-300 block">Jarak Presensi</span>
+                            <span>{{ todayPegawaiRecord.jarak }} meter</span>
+                        </div>
+                    </div>
+                    <div class="text-[11px] text-emerald-300/80 pt-2 border-t border-emerald-800 font-mono">
+                        Device Lock ID: {{ todayPegawaiRecord.deviceId }}
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- ========================================== -->
+            <!-- V I E W 2 : M O D E   A D M I N   D E S A  -->
+            <!-- ========================================== -->
+            <section v-if="currentRole === 'admin'" class="space-y-6">
+
+                <!-- Header Admin & Navigation Bar -->
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <span class="bg-emerald-100 text-emerald-800 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                            Panel Administrator Desa
+                        </span>
+                        <h2 class="text-2xl font-bold text-slate-800 mt-1">Dashboard Rekapitulasi Absensi</h2>
+                        <p class="text-xs text-slate-500">Kantor Pemerintah Desa Kedungmakam, Kec. Jatirogo</p>
+                    </div>
+
+                    <!-- Sub Tab Navigation -->
+                    <div class="flex flex-wrap gap-2 bg-slate-100 p-1.5 rounded-xl text-xs font-semibold">
+                        <button @click="adminTab = 'dashboard'" :class="adminTab === 'dashboard' ? 'bg-white text-emerald-800 shadow' : 'text-slate-600 hover:text-slate-900'" class="px-3.5 py-2 rounded-lg transition">
+                            <i class="fa-solid fa-chart-pie mr-1"></i> Monitoring
+                        </button>
+                        <button @click="adminTab = 'laporan'" :class="adminTab === 'laporan' ? 'bg-white text-emerald-800 shadow' : 'text-slate-600 hover:text-slate-900'" class="px-3.5 py-2 rounded-lg transition">
+                            <i class="fa-solid fa-file-invoice mr-1"></i> Rekap & Laporan
+                        </button>
+                        <button @click="adminTab = 'pegawai'" :class="adminTab === 'pegawai' ? 'bg-white text-emerald-800 shadow' : 'text-slate-600 hover:text-slate-900'" class="px-3.5 py-2 rounded-lg transition">
+                            <i class="fa-solid fa-users mr-1"></i> Data Pegawai
+                        </button>
+                        <button @click="adminTab = 'pengaturan'" :class="adminTab === 'pengaturan' ? 'bg-white text-emerald-800 shadow' : 'text-slate-600 hover:text-slate-900'" class="px-3.5 py-2 rounded-lg transition">
+                            <i class="fa-solid fa-gear mr-1"></i> Pengaturan
+                        </button>
+                        <button @click="adminTab = 'script'" :class="adminTab === 'script' ? 'bg-white text-emerald-800 shadow' : 'text-slate-600 hover:text-slate-900'" class="px-3.5 py-2 rounded-lg transition">
+                            <i class="fa-solid fa-code mr-1"></i> Google Sheets API
+                        </button>
+                    </div>
+                </div>
+
+                <!-- --------------------------------------- -->
+                <!-- TAB 1: MONITORING & KPI                -->
+                <!-- --------------------------------------- -->
+                <div v-if="adminTab === 'dashboard'" class="space-y-6">
+
+                    <!-- Cards KPI Statistik Hari Ini -->
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p class="text-xs font-medium text-slate-500 uppercase">Total Perangkat Desa</p>
+                                <h3 class="text-2xl font-black text-slate-800 mt-1">{{ pegawaiList.length }}</h3>
+                            </div>
+                            <div class="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-slate-600">
+                                <i class="fa-solid fa-users text-xl"></i>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl p-5 border border-emerald-200 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p class="text-xs font-medium text-emerald-600 uppercase">Hadir Hari Ini</p>
+                                <h3 class="text-2xl font-black text-emerald-700 mt-1">{{ statsToday.hadir }}</h3>
+                            </div>
+                            <div class="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
+                                <i class="fa-solid fa-user-check text-xl"></i>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl p-5 border border-amber-200 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p class="text-xs font-medium text-amber-600 uppercase">Terlambat</p>
+                                <h3 class="text-2xl font-black text-amber-700 mt-1">{{ statsToday.terlambat }}</h3>
+                            </div>
+                            <div class="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
+                                <i class="fa-solid fa-clock text-xl"></i>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl p-5 border border-rose-200 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p class="text-xs font-medium text-rose-600 uppercase">Belum Absen</p>
+                                <h3 class="text-2xl font-black text-rose-700 mt-1">{{ statsToday.belumAbsen }}</h3>
+                            </div>
+                            <div class="w-12 h-12 bg-rose-100 rounded-xl flex items-center justify-center text-rose-600">
+                                <i class="fa-solid fa-user-xmark text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabel Log Absensi Hari Ini -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-800 text-base">Monitoring Presensi Realtime (Hari Ini)</h3>
+                                <p class="text-xs text-slate-500">Tanggal: {{ todayDateFormattedLong }}</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input v-model="searchKeyword" type="text" placeholder="Cari nama / NIK..." class="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs text-slate-700">
+                                <thead class="bg-slate-50 border-b border-slate-200 uppercase font-semibold text-slate-500">
+                                    <tr>
+                                        <th class="p-3.5">No</th>
+                                        <th class="p-3.5">NIK & Nama Pegawai</th>
+                                        <th class="p-3.5">Jabatan</th>
+                                        <th class="p-3.5">Jam Masuk</th>
+                                        <th class="p-3.5">Jarak Posisi</th>
+                                        <th class="p-3.5">Status</th>
+                                        <th class="p-3.5">Device ID</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-200">
+                                    <tr v-for="(p, idx) in filteredPegawaiToday" :key="p.nik" class="hover:bg-slate-50 transition">
+                                        <td class="p-3.5 font-medium text-slate-400">{{ idx + 1 }}</td>
+                                        <td class="p-3.5">
+                                            <div class="font-bold text-slate-800">{{ p.nama }}</div>
+                                            <div class="text-[11px] text-slate-500 font-mono">{{ p.nik }}</div>
+                                        </td>
+                                        <td class="p-3.5">{{ p.jabatan }}</td>
+                                        <td class="p-3.5 font-mono">
+                                            <span v-if="p.absenLog" class="font-semibold text-slate-800">{{ p.absenLog.jam }} WIB</span>
+                                            <span v-else class="text-slate-400 italic">- Belum -</span>
+                                        </td>
+                                        <td class="p-3.5">
+                                            <span v-if="p.absenLog">{{ p.absenLog.jarak }} m</span>
+                                            <span v-else class="text-slate-400">-</span>
+                                        </td>
+                                        <td class="p-3.5">
+                                            <span v-if="p.absenLog" 
+                                                  :class="p.absenLog.status === 'Hadir Tepat Waktu' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-100 text-amber-800 border-amber-300'"
+                                                  class="px-2.5 py-1 rounded-full text-[10px] font-bold border inline-block">
+                                                {{ p.absenLog.status }}
+                                            </span>
+                                            <span v-else class="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full text-[10px] font-medium border border-slate-300 inline-block">
+                                                Belum Absen
+                                            </span>
+                                        </td>
+                                        <td class="p-3.5 font-mono text-[11px] text-slate-500">
+                                            <span v-if="p.absenLog">{{ p.absenLog.deviceId.substring(0,10) }}...</span>
+                                            <span v-else>-</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- --------------------------------------- -->
+                <!-- TAB 2: REKAP & LAPORAN (HARIAN, MINGGUAN, BULANAN) -->
+                <!-- --------------------------------------- -->
+                <div v-if="adminTab === 'laporan'" class="space-y-6">
+
+                    <!-- Panel Filter Laporan -->
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
+                        <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                            <i class="fa-solid fa-filter text-emerald-600"></i> Filter Rekapitulasi Laporan Kehadiran
+                        </h3>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <!-- Pilihan Mode Rekap -->
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1.5">Jenis Periode Laporan</label>
+                                <select v-model="reportMode" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800">
+                                    <option value="harian">Laporan Harian</option>
+                                    <option value="mingguan">Laporan Mingguan</option>
+                                    <option value="bulanan">Laporan Bulanan</option>
+                                </select>
+                            </div>
+
+                            <!-- Filter Sesuai Mode -->
+                            <div v-if="reportMode === 'harian'">
+                                <label class="block text-xs font-semibold text-slate-600 mb-1.5">Pilih Tanggal</label>
+                                <input v-model="reportDate" type="date" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium">
+                            </div>
+
+                            <div v-if="reportMode === 'mingguan'">
+                                <label class="block text-xs font-semibold text-slate-600 mb-1.5">Pilih Minggu (Tanggal Awal)</label>
+                                <input v-model="reportDate" type="date" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium">
+                            </div>
+
+                            <div v-if="reportMode === 'bulanan'" class="flex gap-2">
+                                <div class="flex-1">
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Bulan</label>
+                                    <select v-model="reportMonth" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium">
+                                        <option v-for="(m, idx) in monthNames" :key="idx" :value="idx">{{ m }}</option>
+                                    </select>
+                                </div>
+                                <div class="w-28">
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Tahun</label>
+                                    <select v-model="reportYear" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium">
+                                        <option value="2026">2026</option>
+                                        <option value="2025">2025</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons Export & Cetak -->
+                            <div class="flex items-end gap-2">
+                                <button @click="printOfficialReport" class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow">
+                                    <i class="fa-solid fa-print"></i> Cetak Laporan Resmi
+                                </button>
+                                <button @click="exportCsv" class="bg-slate-700 hover:bg-slate-800 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition flex items-center justify-center gap-1">
+                                    <i class="fa-solid fa-file-csv"></i> CSV
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ringkasan Statistik Laporan Terpilih -->
+                    <div class="bg-slate-800 text-white rounded-2xl p-6 shadow-md grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                        <div>
+                            <span class="text-xs text-slate-400 block uppercase font-medium">Total Record</span>
+                            <span class="text-2xl font-black text-white mt-1 block">{{ reportDataList.length }}</span>
+                        </div>
+                        <div>
+                            <span class="text-xs text-emerald-400 block uppercase font-medium">Hadir Tepat Waktu</span>
+                            <span class="text-2xl font-black text-emerald-400 mt-1 block">{{ reportSummary.tepat }}</span>
+                        </div>
+                        <div>
+                            <span class="text-xs text-amber-400 block uppercase font-medium">Terlambat</span>
+                            <span class="text-2xl font-black text-amber-400 mt-1 block">{{ reportSummary.terlambat }}</span>
+                        </div>
+                        <div>
+                            <span class="text-xs text-slate-300 block uppercase font-medium">Tingkat Kehadiran</span>
+                            <span class="text-2xl font-black text-emerald-300 mt-1 block">{{ reportSummary.percentage }}%</span>
+                        </div>
+                    </div>
+
+                    <!-- Tabel Hasil Filter Laporan -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="p-5 border-b border-slate-200">
+                            <h4 class="font-bold text-slate-800 text-sm">
+                                Detail Data Rekapitulasi: <span class="text-emerald-700 uppercase">{{ reportMode }}</span> ({{ reportPeriodText }})
+                            </h4>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs text-slate-700">
+                                <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-500 uppercase">
+                                    <tr>
+                                        <th class="p-3.5">No</th>
+                                        <th class="p-3.5">Tanggal</th>
+                                        <th class="p-3.5">NIK</th>
+                                        <th class="p-3.5">Nama Perangkat Desa</th>
+                                        <th class="p-3.5">Jabatan</th>
+                                        <th class="p-3.5">Jam Masuk</th>
+                                        <th class="p-3.5">Jarak (m)</th>
+                                        <th class="p-3.5">Status</th>
+                                        <th class="p-3.5">Catatan</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-200">
+                                    <tr v-for="(row, idx) in reportDataList" :key="idx" class="hover:bg-slate-50">
+                                        <td class="p-3.5 font-medium text-slate-400">{{ idx + 1 }}</td>
+                                        <td class="p-3.5 font-medium">{{ row.tanggal }}</td>
+                                        <td class="p-3.5 font-mono">{{ row.nik }}</td>
+                                        <td class="p-3.5 font-bold text-slate-800">{{ row.nama }}</td>
+                                        <td class="p-3.5">{{ row.jabatan }}</td>
+                                        <td class="p-3.5 font-mono font-semibold text-slate-800">{{ row.jam }} WIB</td>
+                                        <td class="p-3.5">{{ row.jarak }} m</td>
+                                        <td class="p-3.5">
+                                            <span :class="row.status === 'Hadir Tepat Waktu' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'" class="px-2 py-0.5 rounded font-bold text-[10px]">
+                                                {{ row.status }}
+                                            </span>
+                                        </td>
+                                        <td class="p-3.5 text-slate-500 italic">{{ row.catatan || '-' }}</td>
+                                    </tr>
+                                    <tr v-if="reportDataList.length === 0">
+                                        <td colspan="9" class="p-8 text-center text-slate-400 font-medium">
+                                            Belum ada catatan presensi pada periode yang dipilih.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- --------------------------------------- -->
+                <!-- TAB 3: MANAJEMEN PEGAWAI / PERANGKAT DESA -->
+                <!-- --------------------------------------- -->
+                <div v-if="adminTab === 'pegawai'" class="space-y-6">
+
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex justify-between items-center">
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-base">Master Data Perangkat Desa Kedungmakam</h3>
+                            <p class="text-xs text-slate-500">Kelola NIK, nama, jabatan, dan status aktif perangkat desa.</p>
+                        </div>
+                        <button @click="openPegawaiModal(null)" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2 px-4 rounded-xl text-xs transition flex items-center gap-1.5 shadow">
+                            <i class="fa-solid fa-user-plus"></i> Tambah Pegawai
+                        </button>
+                    </div>
+
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs text-slate-700">
+                                <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-500 uppercase">
+                                    <tr>
+                                        <th class="p-3.5">No</th>
+                                        <th class="p-3.5">NIK</th>
+                                        <th class="p-3.5">Nama Lengkap</th>
+                                        <th class="p-3.5">Jabatan</th>
+                                        <th class="p-3.5">Seksi / Kaur</th>
+                                        <th class="p-3.5">Status</th>
+                                        <th class="p-3.5 text-right">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-200">
+                                    <tr v-for="(p, idx) in pegawaiList" :key="p.nik" class="hover:bg-slate-50">
+                                        <td class="p-3.5 text-slate-400 font-medium">{{ idx + 1 }}</td>
+                                        <td class="p-3.5 font-mono font-semibold">{{ p.nik }}</td>
+                                        <td class="p-3.5 font-bold text-slate-800">{{ p.nama }}</td>
+                                        <td class="p-3.5">{{ p.jabatan }}</td>
+                                        <td class="p-3.5 text-slate-600">{{ p.seksi }}</td>
+                                        <td class="p-3.5">
+                                            <span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded">Aktif</span>
+                                        </td>
+                                        <td class="p-3.5 text-right space-x-1">
+                                            <button @click="openPegawaiModal(p)" class="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition" title="Edit">
+                                                <i class="fa-solid fa-pen-to-square"></i>
+                                            </button>
+                                            <button @click="deletePegawai(p.nik)" class="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded transition" title="Hapus">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- --------------------------------------- -->
+                <!-- TAB 4: PENGATURAN KANTOR & LOGO TUBAN   -->
+                <!-- --------------------------------------- -->
+                <div v-if="adminTab === 'pengaturan'" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                    <!-- Pengaturan Lokasi GPS & Geofence -->
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
+                        <h3 class="font-bold text-slate-800 text-base flex items-center gap-2 border-b pb-3">
+                            <i class="fa-solid fa-location-dot text-emerald-600"></i> Koordinat Lokasi Kantor Desa
+                        </h3>
+
+                        <div class="space-y-3 text-xs">
+                            <div>
+                                <label class="block font-semibold text-slate-700 mb-1">Latitude Kantor Desa</label>
+                                <input v-model.number="settings.officeLat" type="number" step="0.000001" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 font-mono">
+                            </div>
+                            <div>
+                                <label class="block font-semibold text-slate-700 mb-1">Longitude Kantor Desa</label>
+                                <input v-model.number="settings.officeLng" type="number" step="0.000001" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 font-mono">
+                            </div>
+                            <div>
+                                <label class="block font-semibold text-slate-700 mb-1">Radius Geofence Maksimal (Meter)</label>
+                                <input v-model.number="settings.geofenceRadius" type="number" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2">
+                                <p class="text-[11px] text-slate-500 mt-1">Hanya pegawai dalam radius ini yang diperbolehkan absen.</p>
+                            </div>
+
+                            <div>
+                                <label class="block font-semibold text-slate-700 mb-1">Jam Batas Masuk (HH:MM)</label>
+                                <input v-model="settings.jamBatasMasuk" type="time" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 font-semibold">
+                                <p class="text-[11px] text-slate-500 mt-1">Lewat dari jam ini otomatis tercatat 'Terlambat'.</p>
+                            </div>
+
+                            <button @click="setCurrentLocationAsOffice" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-3 rounded-xl border border-slate-300 transition flex items-center justify-center gap-1.5">
+                                <i class="fa-solid fa-crosshairs"></i> Ambil Koordinat GPS Saat Ini
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Pengaturan Logo Kabupaten & Pejabat TTD -->
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
+                        <h3 class="font-bold text-slate-800 text-base flex items-center gap-2 border-b pb-3">
+                            <i class="fa-solid fa-shield-halved text-emerald-600"></i> Logo Kabupaten & Penandatangan
+                        </h3>
+
+                        <div class="space-y-4 text-xs">
+                            <!-- Custom Logo Tuban -->
+                            <div>
+                                <label class="block font-semibold text-slate-700 mb-1">Logo Kabupaten Tuban</label>
+                                <div class="flex items-center gap-4">
+                                    <div class="w-14 h-14 bg-slate-50 border rounded-xl p-1.5 flex items-center justify-center shadow-inner">
+                                        <img :src="settings.logoUrl" alt="Logo preview" class="max-h-full max-w-full object-contain">
+                                    </div>
+                                    <div class="flex-1 space-y-2">
+                                        <input type="file" @change="onLogoFileChange" accept="image/*" class="block w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100">
+                                        <button @click="resetLogoToDefault" class="text-[11px] text-rose-600 font-semibold hover:underline">
+                                            Reset ke Logo Default Tuban SVG
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Nama Pejabat Penandatangan Laporan -->
+                            <div class="pt-2 border-t space-y-3">
+                                <div>
+                                    <label class="block font-semibold text-slate-700 mb-1">Nama Kepala Desa (TTD Kiri)</label>
+                                    <input v-model="settings.kadesNama" type="text" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 font-medium">
+                                </div>
+                                <div>
+                                    <label class="block font-semibold text-slate-700 mb-1">Nama Sekretaris Desa / Admin (TTD Kanan)</label>
+                                    <input v-model="settings.sekdesNama" type="text" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 font-medium">
+                                </div>
+                            </div>
+
+                            <div class="pt-3">
+                                <button @click="saveSettings" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 rounded-xl shadow transition">
+                                    Simpan Pengaturan Desa
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Reset & Danger Zone -->
+                    <div class="md:col-span-2 bg-rose-50 border border-rose-200 rounded-2xl p-6 space-y-3">
+                        <h4 class="font-bold text-rose-900 text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Pengelolaan Kunci Perangkat HP & Data Reset
+                        </h4>
+                        <p class="text-xs text-rose-700">
+                            Setiap HP terkunci 1x presensi per hari. Jika ada kesalahan pegawai saat absen di HP yang sama, Anda dapat membuka kunci perangkat hari ini atau mereset sampel data.
+                        </p>
+                        <div class="flex flex-wrap gap-3 pt-1">
+                            <button @click="clearTodayDeviceLock" class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold py-2 px-4 rounded-xl transition">
+                                <i class="fa-solid fa-key mr-1"></i> Buka Kunci Perangkat HP Hari Ini
+                            </button>
+                            <button @click="resetAllData" class="bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold py-2 px-4 rounded-xl transition">
+                                <i class="fa-solid fa-trash-can mr-1"></i> Reset Seluruh Data Log Absensi
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- --------------------------------------- -->
+                <!-- TAB 5: INTEGRASI GOOGLE SHEETS API      -->
+                <!-- --------------------------------------- -->
+                <div v-if="adminTab === 'script'" class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
+                    <div class="flex justify-between items-center border-b pb-4">
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-base">Panduan Sync Ke Google Sheets (Google Apps Script)</h3>
+                            <p class="text-xs text-slate-500">Salin skrip `Code.gs` ini ke Google Sheets Apps Script Anda untuk integrasi cloud gratis.</p>
+                        </div>
+                        <button @click="copyAppsScript" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 px-4 rounded-xl transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-copy"></i> Salin Kode Script
+                        </button>
+                    </div>
+
+                    <div class="bg-slate-900 text-emerald-400 p-4 rounded-xl font-mono text-xs overflow-x-auto border border-slate-800 leading-relaxed">
+                        <pre><code>// ================================================================
+// GOOGLE APPS SCRIPT (Code.gs) - PEMDES KEDUNGMAKAM ATTENDANCE API
+// ================================================================
+
+function doPost(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var data = JSON.parse(e.postData.contents);
+    
+    // Header jika sheet masih kosong
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(["Timestamp", "Tanggal", "Jam", "NIK", "Nama", "Jabatan", "Jarak (m)", "Status", "Device ID", "Catatan"]);
+    }
+    
+    // Append data presensi baru
+    sheet.appendRow([
+      new Date(),
+      data.tanggal,
+      data.jam,
+      data.nik,
+      data.nama,
+      data.jabatan,
+      data.jarak,
+      data.status,
+      data.deviceId,
+      data.catatan || ''
+    ]);
+    
+    return ContentService.createTextOutput(JSON.stringify({"result": "success", "message": "Absen berhasil disimpan"}))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({"result": "error", "error": error.toString()}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}</code></pre>
+                    </div>
+
+                    <div class="text-xs text-slate-600 space-y-2 bg-slate-50 p-4 rounded-xl border">
+                        <h4 class="font-bold text-slate-800">Langkah Penyebaran Web App:</h4>
+                        <ol class="list-decimal list-inside space-y-1">
+                            <li>Buka Google Sheets baru &rarr; Klik menu <strong>Ekstensi</strong> &rarr; <strong>Apps Script</strong>.</li>
+                            <li>Hapus isi berkas `Code.gs`, tempelkan kode di atas, lalu simpan (Ctrl+S).</li>
+                            <li>Klik tombol <strong>Deploy (Terapkan)</strong> &rarr; <strong>Deployment baru</strong> &rarr; Jenis: <em>Aplikasi Web</em>.</li>
+                            <li>Akses: Pilih <strong>Siapa Saja (Anyone)</strong>, lalu klik <strong>Terapkan</strong> dan salin URL Web App Anda.</li>
+                        </ol>
+                    </div>
+                </div>
+
+            </section>
+
+        </main>
+
+        <!-- ========================================== -->
+        <!-- M O D A L   T A M B A H / E D I T   P E G A W A I -->
+        <!-- ========================================== -->
+        <div v-if="showPegawaiModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                <div class="flex justify-between items-center border-b pb-3">
+                    <h3 class="font-bold text-slate-800 text-base">
+                        {{ editingPegawai ? 'Edit Data Perangkat Desa' : 'Tambah Perangkat Desa Baru' }}
+                    </h3>
+                    <button @click="showPegawaiModal = false" class="text-slate-400 hover:text-slate-600">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">NIK (Nomor Induk Kependudukan)</label>
+                        <input v-model="formPegawai.nik" :disabled="editingPegawai !== null" type="text" placeholder="352309..." class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 font-mono">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Nama Lengkap & Gelar</label>
+                        <input v-model="formPegawai.nama" type="text" placeholder="Misal: Ahmad Fauzi, S.ST." class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Jabatan Perangkat Desa</label>
+                        <input v-model="formPegawai.jabatan" type="text" placeholder="Misal: Sekretaris Desa / Kasi Pemerintahan" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Seksi / Kaur / Dusun</label>
+                        <input v-model="formPegawai.seksi" type="text" placeholder="Misal: Sekretariat / Dusun I" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2">
+                    </div>
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button @click="showPegawaiModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition">
+                        Batal
+                    </button>
+                    <button @click="savePegawai" class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 rounded-xl text-xs shadow transition">
+                        Simpan Pegawai
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- L A P O R A N   R E S M I   ( P R I N T )  -->
+        <!-- ========================================== -->
+        <div class="print-only bg-white text-black p-4 space-y-6">
+            
+            <!-- KOP SURAT RESMI PEMERINTAH DESA KEDUNGMAKAM -->
+            <div class="flex items-center justify-between pb-3 kop-border">
+                <div class="w-24 h-24 flex items-center justify-center p-1">
+                    <img :src="settings.logoUrl" alt="Logo Kab Tuban" class="max-h-full max-w-full object-contain">
+                </div>
+                <div class="text-center flex-1 px-4">
+                    <h3 class="text-base font-bold uppercase tracking-wide">PEMERINTAH KABUPATEN TUBAN</h3>
+                    <h3 class="text-base font-bold uppercase tracking-wide">KECAMATAN JATIROGO</h3>
+                    <h2 class="text-xl font-black uppercase tracking-wider text-black">PEMERINTAH DESA KEDUNGMAKAM</h2>
+                    <p class="text-xs mt-1">Jl. Raya Kedungmakam No. 01 Kode Pos 62365 - Email: pemdes@kedungmakam.desa.id</p>
+                </div>
+                <div class="w-24"></div> <!-- Spacer penyeimbang -->
+            </div>
+
+            <!-- JUDUL LAPORAN -->
+            <div class="text-center space-y-1">
+                <h3 class="font-bold text-base uppercase underline tracking-wide">LAPORAN REKAPITULASI PRESENSI MASUK PERANGKAT DESA</h3>
+                <p class="text-xs font-semibold">Periode: {{ reportPeriodText }}</p>
+            </div>
+
+            <!-- TABEL DATA CETAK -->
+            <table class="w-full text-xs border-collapse border border-black">
+                <thead>
+                    <tr class="bg-gray-100 font-bold uppercase">
+                        <th class="border border-black p-2 text-center w-10">No</th>
+                        <th class="border border-black p-2">Tanggal</th>
+                        <th class="border border-black p-2">NIK</th>
+                        <th class="border border-black p-2">Nama Perangkat Desa</th>
+                        <th class="border border-black p-2">Jabatan</th>
+                        <th class="border border-black p-2 text-center">Jam Masuk</th>
+                        <th class="border border-black p-2 text-center">Jarak (m)</th>
+                        <th class="border border-black p-2 text-center">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="(row, idx) in reportDataList" :key="idx">
+                        <td class="border border-black p-2 text-center">{{ idx + 1 }}</td>
+                        <td class="border border-black p-2">{{ row.tanggal }}</td>
+                        <td class="border border-black p-2 font-mono">{{ row.nik }}</td>
+                        <td class="border border-black p-2 font-bold">{{ row.nama }}</td>
+                        <td class="border border-black p-2">{{ row.jabatan }}</td>
+                        <td class="border border-black p-2 text-center font-semibold">{{ row.jam }} WIB</td>
+                        <td class="border border-black p-2 text-center">{{ row.jarak }} m</td>
+                        <td class="border border-black p-2 text-center">{{ row.status }}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- BLOK PENANDATANGANAN / SIGNATORIES -->
+            <div class="pt-8 flex justify-between text-xs leading-relaxed page-break-inside-avoid">
+                <!-- TTD KIRI: KEPALA DESA -->
+                <div class="text-center w-64 space-y-16">
+                    <div>
+                        <p>Mengetahui,</p>
+                        <p class="font-bold">KEPALA DESA KEDUNGMAKAM</p>
+                    </div>
+                    <div>
+                        <p class="font-bold underline uppercase">{{ settings.kadesNama }}</p>
+                        <p class="text-[10px]">NIAP. 3523091201800001</p>
+                    </div>
+                </div>
+
+                <!-- TTD KANAN: SEKRETARIS DESA / ADMIN -->
+                <div class="text-center w-64 space-y-16">
+                    <div>
+                        <p>Kedungmakam, {{ todayDateFormattedLong }}</p>
+                        <p class="font-bold">Sekretaris Desa / Verifikator,</p>
+                    </div>
+                    <div>
+                        <p class="font-bold underline uppercase">{{ settings.sekdesNama }}</p>
+                        <p class="text-[10px]">NIAP. 3523091505850002</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- SCRIPT APLIKASI VUE 3 -->
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        // Logo Default SVG Kabupaten Tuban
+        const DEFAULT_TUBAN_LOGO_SVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240"><path d="M100 10 L180 50 L180 150 C180 190 100 230 100 230 C100 230 20 190 20 150 L20 50 Z" fill="%23047857" stroke="%23d97706" stroke-width="8"/><path d="M100 25 L165 58 L165 145 C165 178 100 212 100 212 C100 212 35 178 35 145 L35 58 Z" fill="%231e40af"/><polygon points="100,45 107,65 128,65 111,78 117,98 100,85 83,98 89,78 72,65 93,65" fill="%23fbbf24"/><rect x="85" y="105" width="30" height="60" fill="%23ffffff" rx="4"/><polygon points="100,95 80,107 120,107" fill="%23dc2626"/><path d="M40 170 Q100 140 160 170 Q100 195 40 170 Z" fill="%23f59e0b"/><text x="100" y="200" font-family="sans-serif" font-size="16" font-weight="bold" fill="%23ffffff" text-anchor="middle">TUBAN</text></svg>`;
+
+        // Data sampel Perangkat Desa Kedungmakam
+        const DEFAULT_PEGAWAI = [
+            { nik: "3523091201800001", nama: "H. Sunarto, S.Pd.", jabatan: "Kepala Desa", seksi: "Kepala Desa" },
+            { nik: "3523091505850002", nama: "Ahmad Fauzi, S.ST.", jabatan: "Sekretaris Desa", seksi: "Sekretariat Desa" },
+            { nik: "3523092003880003", nama: "Bambang Setiawan", jabatan: "Kasi Pemerintahan", seksi: "Seksi Pemerintahan" },
+            { nik: "3523091008900004", nama: "Siti Nurhaliza, S.E.", jabatan: "Kasi Kesejahteraan", seksi: "Seksi Kesra & Pelayanan" },
+            { nik: "3523090404920005", nama: "Eko Prasetyo, A.Md.", jabatan: "Kaur Keuangan", seksi: "Urusan Keuangan" },
+            { nik: "3523092811910006", nama: "Rina Wati", jabatan: "Kaur Umum & Perencanaan", seksi: "Urusan Umum" },
+            { nik: "3523090101860007", nama: "Sugeng Riyadi", jabatan: "Kasun Kedungmakam I", seksi: "Kewilayahan Dusun I" },
+            { nik: "3523091407890008", nama: "Supardi", jabatan: "Kasun Kedungmakam II", seksi: "Kewilayahan Dusun II" }
+        ];
+
+        createApp({
+            setup() {
+                // Roles & Tabs
+                const currentRole = ref('pegawai');
+                const adminTab = ref('dashboard');
+
+                // System Settings
+                const settings = ref({
+                    officeLat: -6.887200, // Koordinat Desa Kedungmakam, Jatirogo
+                    officeLng: 111.660800,
+                    geofenceRadius: 100, // meter
+                    jamBatasMasuk: "07:30",
+                    kadesNama: "H. Sunarto, S.Pd.",
+                    sekdesNama: "Ahmad Fauzi, S.ST.",
+                    logoUrl: DEFAULT_TUBAN_LOGO_SVG
+                });
+
+                // Device Fingerprint
+                const deviceId = ref('');
+
+                // Data Pegawai & Absensi
+                const pegawaiList = ref([]);
+                const attendanceLogs = ref([]);
+                const selectedPegawaiNik = ref('');
+                const selectedPegawai = ref(null);
+                const absenNote = ref('');
+
+                // Live Clock & Date
+                const currentTimeString = ref('');
+                const currentDateFormatted = ref('');
+                const todayDateString = ref('');
+                const todayDateFormattedLong = ref('');
+
+                // GPS & Geofencing State
+                const currentLat = ref(null);
+                const currentLng = ref(null);
+                const currentDistance = ref(null);
+                const gpsAccuracy = ref(null);
+                const gpsLoading = ref(false);
+
+                // Admin Search & Reports
+                const searchKeyword = ref('');
+                const reportMode = ref('harian');
+                const reportDate = ref(new Date().toISOString().split('T')[0]);
+                const reportMonth = ref(new Date().getMonth());
+                const reportYear = ref("2026");
+
+                const monthNames = [
+                    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+                    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+                ];
+
+                // Modal States
+                const showPegawaiModal = ref(false);
+                const editingPegawai = ref(null);
+                const formPegawai = ref({ nik: '', nama: '', jabatan: '', seksi: '' });
+
+                // Initialize Device ID
+                const initDevice = () => {
+                    let id = localStorage.getItem('kedungmakam_device_id');
+                    if (!id) {
+                        id = 'DEV-HP-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+                        localStorage.setItem('kedungmakam_device_id', id);
+                    }
+                    deviceId.value = id;
+                };
+
+                // Realtime Clock
+                const updateClock = () => {
+                    const now = new Date();
+                    currentTimeString.value = now.toLocaleTimeString('id-ID', { hour12: false });
+                    currentDateFormatted.value = now.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                    todayDateString.value = now.toISOString().split('T')[0];
+                    todayDateFormattedLong.value = currentDateFormatted.value;
+                };
+
+                // Haversine Distance Formula (Meter)
+                const calculateDistance = (lat1, lon1, lat2, lon2) => {
+                    const R = 6371000; // Earth radius in meters
+                    const dLat = (lat2 - lat1) * Math.PI / 180;
+                    const dLon = (lon2 - lon1) * Math.PI / 180;
+                    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                              Math.sin(dLon/2) * Math.sin(dLon/2);
+                    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                    return Math.round(R * c);
+                };
+
+                // Update Browser GPS
+                const updateGpsLocation = () => {
+                    gpsLoading.value = true;
+                    if ('geolocation' in navigator) {
+                        navigator.geolocation.getCurrentPosition(
+                            (position) => {
+                                currentLat.value = position.coords.latitude;
+                                currentLng.value = position.coords.longitude;
+                                gpsAccuracy.value = position.coords.accuracy;
+                                currentDistance.value = calculateDistance(
+                                    currentLat.value, currentLng.value,
+                                    settings.value.officeLat, settings.value.officeLng
+                                );
+                                gpsLoading.value = false;
+                            },
+                            (error) => {
+                                // Default fallback (simulated near office for demo if GPS denied)
+                                currentLat.value = settings.value.officeLat + 0.0001;
+                                currentLng.value = settings.value.officeLng + 0.0001;
+                                gpsAccuracy.value = 15;
+                                currentDistance.value = calculateDistance(
+                                    currentLat.value, currentLng.value,
+                                    settings.value.officeLat, settings.value.officeLng
+                                );
+                                gpsLoading.value = false;
+                            },
+                            { enableHighAccuracy: true, timeout: 5000 }
+                        );
+                    } else {
+                        gpsLoading.value = false;
+                    }
+                };
+
+                // Simulated GPS for demo testing
+                const setSimulatedGps = (inside) => {
+                    if (inside) {
+                        currentLat.value = settings.value.officeLat;
+                        currentLng.value = settings.value.officeLng;
+                    } else {
+                        currentLat.value = settings.value.officeLat + 0.005; // ~500m away
+                        currentLng.value = settings.value.officeLng + 0.005;
+                    }
+                    currentDistance.value = calculateDistance(
+                        currentLat.value, currentLng.value,
+                        settings.value.officeLat, settings.value.officeLng
+                    );
+                };
+
+                // Selection Change
+                const onPegawaiSelected = () => {
+                    selectedPegawai.value = pegawaiList.value.find(p => p.nik === selectedPegawaiNik.value) || null;
+                };
+
+                // Lock per HP per Hari Check
+                const deviceLockToday = computed(() => {
+                    return attendanceLogs.value.find(log => log.tanggal === todayDateString.value && log.deviceId === deviceId.value);
+                });
+
+                // Radius Check
+                const isWithinGeofence = computed(() => {
+                    if (currentDistance.value === null) return false;
+                    return currentDistance.value <= settings.value.geofenceRadius;
+                });
+
+                // Check if already checked in today
+                const alreadyAbsenToday = computed(() => {
+                    if (!selectedPegawaiNik.value) return false;
+                    return attendanceLogs.value.some(log => log.tanggal === todayDateString.value && log.nik === selectedPegawaiNik.value);
+                });
+
+                const canAbsen = computed(() => {
+                    return selectedPegawai.value && isWithinGeofence.value && !alreadyAbsenToday.value && !deviceLockToday.value;
+                });
+
+                const todayPegawaiRecord = computed(() => {
+                    if (!selectedPegawaiNik.value) return null;
+                    return attendanceLogs.value.find(log => log.tanggal === todayDateString.value && log.nik === selectedPegawaiNik.value) || null;
+                });
+
+                // SUBMIT ABSEN MASUK
+                const doAbsenMasuk = () => {
+                    if (!canAbsen.value) return;
+
+                    const now = new Date();
+                    const jamNowStr = now.toLocaleTimeString('id-ID', { hour12: false });
+                    const isLate = jamNowStr > (settings.value.jamBatasMasuk + ":00");
+
+                    const newLog = {
+                        tanggal: todayDateString.value,
+                        jam: jamNowStr,
+                        nik: selectedPegawai.value.nik,
+                        nama: selectedPegawai.value.nama,
+                        jabatan: selectedPegawai.value.jabatan,
+                        jarak: currentDistance.value,
+                        status: isLate ? 'Terlambat' : 'Hadir Tepat Waktu',
+                        deviceId: deviceId.value,
+                        catatan: absenNote.value
+                    };
+
+                    attendanceLogs.value.unshift(newLog);
+                    localStorage.setItem('kedungmakam_logs', JSON.stringify(attendanceLogs.value));
+                    absenNote.value = '';
+                };
+
+                // Dashboard Statistics Today
+                const statsToday = computed(() => {
+                    const todayLogs = attendanceLogs.value.filter(l => l.tanggal === todayDateString.value);
+                    const hadir = todayLogs.filter(l => l.status === 'Hadir Tepat Waktu').length;
+                    const terlambat = todayLogs.filter(l => l.status === 'Terlambat').length;
+                    const belumAbsen = pegawaiList.value.length - todayLogs.length;
+
+                    return { hadir, terlambat, belumAbsen };
+                });
+
+                // Filtered Pegawai Today Monitor
+                const filteredPegawaiToday = computed(() => {
+                    const todayLogs = attendanceLogs.value.filter(l => l.tanggal === todayDateString.value);
+                    return pegawaiList.value.map(p => {
+                        const log = todayLogs.find(l => l.nik === p.nik);
+                        return { ...p, absenLog: log };
+                    }).filter(p => {
+                        if (!searchKeyword.value) return true;
+                        const kw = searchKeyword.value.toLowerCase();
+                        return p.nama.toLowerCase().includes(kw) || p.nik.includes(kw);
+                    });
+                });
+
+                // Laporan Filter Logic
+                const reportPeriodText = computed(() => {
+                    if (reportMode.value === 'harian') {
+                        return `Hari Ini (${reportDate.value})`;
+                    } else if (reportMode.value === 'mingguan') {
+                        return `Minggu Berjalan (${reportDate.value})`;
+                    } else {
+                        return `Bulan ${monthNames[reportMonth.value]} ${reportYear.value}`;
+                    }
+                });
+
+                const reportDataList = computed(() => {
+                    return attendanceLogs.value.filter(log => {
+                        if (reportMode.value === 'harian') {
+                            return log.tanggal === reportDate.value;
+                        } else if (reportMode.value === 'mingguan') {
+                            // Filter 7 hari dari reportDate
+                            const start = new Date(reportDate.value);
+                            const end = new Date(start);
+                            end.setDate(end.getDate() + 6);
+                            const logDate = new Date(log.tanggal);
+                            return logDate >= start && logDate <= end;
+                        } else {
+                            // Bulanan
+                            const [y, m] = log.tanggal.split('-');
+                            return parseInt(y) === parseInt(reportYear.value) && (parseInt(m) - 1) === parseInt(reportMonth.value);
+                        }
+                    });
+                });
+
+                const reportSummary = computed(() => {
+                    const total = reportDataList.value.length;
+                    const tepat = reportDataList.value.filter(r => r.status === 'Hadir Tepat Waktu').length;
+                    const terlambat = reportDataList.value.filter(r => r.status === 'Terlambat').length;
+                    const percentage = total > 0 ? Math.round((tepat / total) * 100) : 0;
+                    return { tepat, terlambat, percentage };
+                });
+
+                // Export CSV
+                const exportCsv = () => {
+                    let csv = "Tanggal,Jam,NIK,Nama,Jabatan,Jarak(m),Status,Device ID,Catatan\n";
+                    reportDataList.value.forEach(r => {
+                        csv += `"${r.tanggal}","${r.jam}","${r.nik}","${r.nama}","${r.jabatan}",${r.jarak},"${r.status}","${r.deviceId}","${r.catatan || ''}"\n`;
+                    });
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", `Laporan_Absensi_Kedungmakam_${reportMode.value}_${todayDateString.value}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                };
+
+                // Print Formal Report
+                const printOfficialReport = () => {
+                    window.print();
+                };
+
+                // Pegawai Management CRUD
+                const openPegawaiModal = (peg) => {
+                    if (peg) {
+                        editingPegawai.value = peg;
+                        formPegawai.value = { ...peg };
+                    } else {
+                        editingPegawai.value = null;
+                        formPegawai.value = { nik: '', nama: '', jabatan: '', seksi: '' };
+                    }
+                    showPegawaiModal.value = true;
+                };
+
+                const savePegawai = () => {
+                    if (!formPegawai.value.nik || !formPegawai.value.nama) return;
+                    if (editingPegawai.value) {
+                        const idx = pegawaiList.value.findIndex(p => p.nik === formPegawai.value.nik);
+                        if (idx !== -1) pegawaiList.value[idx] = { ...formPegawai.value };
+                    } else {
+                        pegawaiList.value.push({ ...formPegawai.value });
+                    }
+                    localStorage.setItem('kedungmakam_pegawai', JSON.stringify(pegawaiList.value));
+                    showPegawaiModal.value = false;
+                };
+
+                const deletePegawai = (nik) => {
+                    pegawaiList.value = pegawaiList.value.filter(p => p.nik !== nik);
+                    localStorage.setItem('kedungmakam_pegawai', JSON.stringify(pegawaiList.value));
+                };
+
+                // Settings & Custom Logo
+                const onLogoFileChange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            settings.value.logoUrl = event.target.result;
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                };
+
+                const resetLogoToDefault = () => {
+                    settings.value.logoUrl = DEFAULT_TUBAN_LOGO_SVG;
+                };
+
+                const setCurrentLocationAsOffice = () => {
+                    if (currentLat.value && currentLng.value) {
+                        settings.value.officeLat = currentLat.value;
+                        settings.value.officeLng = currentLng.value;
+                        saveSettings();
+                    }
+                };
+
+                const saveSettings = () => {
+                    localStorage.setItem('kedungmakam_settings', JSON.stringify(settings.value));
+                };
+
+                const clearTodayDeviceLock = () => {
+                    attendanceLogs.value = attendanceLogs.value.filter(log => !(log.tanggal === todayDateString.value && log.deviceId === deviceId.value));
+                    localStorage.setItem('kedungmakam_logs', JSON.stringify(attendanceLogs.value));
+                };
+
+                const resetAllData = () => {
+                    localStorage.removeItem('kedungmakam_logs');
+                    attendanceLogs.value = [];
+                    generateSampleLogs();
+                };
+
+                const copyAppsScript = () => {
+                    const scriptText = `function doPost(e) {\n  try {\n    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n    var data = JSON.parse(e.postData.contents);\n    if (sheet.getLastRow() === 0) {\n      sheet.appendRow(["Timestamp", "Tanggal", "Jam", "NIK", "Nama", "Jabatan", "Jarak (m)", "Status", "Device ID", "Catatan"]);\n    }\n    sheet.appendRow([new Date(), data.tanggal, data.jam, data.nik, data.nama, data.jabatan, data.jarak, data.status, data.deviceId, data.catatan || '']);\n    return ContentService.createTextOutput(JSON.stringify({"result": "success"})).setMimeType(ContentService.MimeType.JSON);\n  } catch (error) {\n    return ContentService.createTextOutput(JSON.stringify({"result": "error", "error": error.toString()})).setMimeType(ContentService.MimeType.JSON);\n  }\n}`;
+                    document.execCommand('copy');
+                };
+
+                // Pre-generate sample data if empty
+                const generateSampleLogs = () => {
+                    const logs = [];
+                    const today = new Date();
+                    
+                    for (let i = 0; i < 7; i++) {
+                        const d = new Date(today);
+                        d.setDate(d.getDate() - i);
+                        const dateStr = d.toISOString().split('T')[0];
+
+                        DEFAULT_PEGAWAI.slice(0, 6).forEach((p, index) => {
+                            const jamHour = 7;
+                            const jamMin = index < 4 ? Math.floor(Math.random() * 25) : 35 + index;
+                            const minStr = jamMin < 10 ? '0' + jamMin : jamMin;
+                            const status = jamMin > 30 ? 'Terlambat' : 'Hadir Tepat Waktu';
+
+                            logs.push({
+                                tanggal: dateStr,
+                                jam: `07:${minStr}:15`,
+                                nik: p.nik,
+                                nama: p.nama,
+                                jabatan: p.jabatan,
+                                jarak: 15 + Math.floor(Math.random() * 40),
+                                status: status,
+                                deviceId: `DEV-HP-SAMPLE-${index}`,
+                                catatan: status === 'Terlambat' ? 'Jalan macet' : ''
+                            });
+                        });
+                    }
+                    attendanceLogs.value = logs;
+                    localStorage.setItem('kedungmakam_logs', JSON.stringify(logs));
+                };
+
+                // Mount Setup
+                onMounted(() => {
+                    initDevice();
+                    updateClock();
+                    setInterval(updateClock, 1000);
+
+                    // Load saved data
+                    const savedSettings = localStorage.getItem('kedungmakam_settings');
+                    if (savedSettings) settings.value = JSON.parse(savedSettings);
+
+                    const savedPegawai = localStorage.getItem('kedungmakam_pegawai');
+                    if (savedPegawai) {
+                        pegawaiList.value = JSON.parse(savedPegawai);
+                    } else {
+                        pegawaiList.value = DEFAULT_PEGAWAI;
+                        localStorage.setItem('kedungmakam_pegawai', JSON.stringify(DEFAULT_PEGAWAI));
+                    }
+
+                    const savedLogs = localStorage.getItem('kedungmakam_logs');
+                    if (savedLogs) {
+                        attendanceLogs.value = JSON.parse(savedLogs);
+                    } else {
+                        generateSampleLogs();
+                    }
+
+                    updateGpsLocation();
+                });
+
+                return {
+                    currentRole,
+                    adminTab,
+                    settings,
+                    deviceId,
+                    pegawaiList,
+                    attendanceLogs,
+                    selectedPegawaiNik,
+                    selectedPegawai,
+                    absenNote,
+                    currentTimeString,
+                    currentDateFormatted,
+                    todayDateString,
+                    todayDateFormattedLong,
+                    currentLat,
+                    currentLng,
+                    currentDistance,
+                    gpsAccuracy,
+                    gpsLoading,
+                    searchKeyword,
+                    reportMode,
+                    reportDate,
+                    reportMonth,
+                    reportYear,
+                    monthNames,
+                    showPegawaiModal,
+                    editingPegawai,
+                    formPegawai,
+                    onPegawaiSelected,
+                    deviceLockToday,
+                    isWithinGeofence,
+                    alreadyAbsenToday,
+                    canAbsen,
+                    todayPegawaiRecord,
+                    doAbsenMasuk,
+                    updateGpsLocation,
+                    setSimulatedGps,
+                    statsToday,
+                    filteredPegawaiToday,
+                    reportPeriodText,
+                    reportDataList,
+                    reportSummary,
+                    exportCsv,
+                    printOfficialReport,
+                    openPegawaiModal,
+                    savePegawai,
+                    deletePegawai,
+                    onLogoFileChange,
+                    resetLogoToDefault,
+                    setCurrentLocationAsOffice,
+                    saveSettings,
+                    clearTodayDeviceLock,
+                    resetAllData,
+                    copyAppsScript
+                };
+            }
+        }).mount('#app');
+
+// ==========================================
+// KONFIGURASI GOOGLE APPS SCRIPT
+// ==========================================
+
+// PERTAHANKAN URL WEB APP ANDA YANG SUDAH ADA
+const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbziudXc6ShFCLUbcBQGkqwnaPJ-amgTGCVvmND35n0e1RnICUp9HN18f4IUAzVhkQtPJQ/exec';
+
+// ==========================================
+// 1. MENGAMBIL DATA DARI GOOGLE SHEETS
+// ==========================================
+
+async function ambilDataSheet(tanggal = '') {
+    try {
+        if (!GAS_WEB_APP_URL ||
+            GAS_WEB_APP_URL.includes('MASUKKAN_URL')) {
+            throw new Error('URL Web App belum diatur.');
+        }
+
+        const query = tanggal
+            ? `?action=init&tanggal=${encodeURIComponent(tanggal)}`
+            : '?action=init';
+
+        const response = await fetch(
+            `${GAS_WEB_APP_URL}${query}`
+        );
+
+        if (!response.ok) {
+            throw new Error('Gagal mengambil data server.');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error('Error ambil data:', error);
+        return {
+            ok: false,
+            message: error.message
+        };
+    }
+}
+
+// ==========================================
+// 2. MENGIRIM DATA KE GOOGLE SHEETS
+// ==========================================
+
+async function kirimKeSheet(payload) {
+    try {
+        if (!GAS_WEB_APP_URL ||
+            GAS_WEB_APP_URL.includes('MASUKKAN_URL')) {
+            throw new Error('URL Web App belum diatur.');
+        }
+
+        const response = await fetch(GAS_WEB_APP_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error('Gagal mengirim data ke server.');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error('Error kirim data:', error);
+        return {
+            ok: false,
+            message: error.message
+        };
+    }
+}
+
+// ==========================================
+// 3. PROSES ABSEN MASUK
+// ==========================================
+
+async function prosesAbsenMasukKeSheet(dataAbsen) {
+    const hasil = await kirimKeSheet({
+        action: 'absen_masuk',
+        nik: dataAbsen.nik,
+        nama: dataAbsen.nama,
+        jabatan: dataAbsen.jabatan,
+        jarak_meter: dataAbsen.jarak_meter,
+        status_kehadiran: dataAbsen.status_kehadiran,
+        device_id: dataAbsen.device_id,
+        lat: dataAbsen.lat,
+        lng: dataAbsen.lng
+    });
+
+    if (!hasil.ok) {
+        alert(hasil.message || 'Absensi gagal disimpan.');
+        return false;
+    }
+
+    alert('Absensi berhasil disimpan ke Google Sheets!');
+    return true;
+}
+</script>
+
+</body>
+</html>
